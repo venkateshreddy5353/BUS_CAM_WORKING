@@ -37,10 +37,15 @@ def eye_aspect_ratio(eye):
     C = distance.euclidean(eye[0], eye[3])
     ear = (A + B) / (2.0 * C)
     return ear
+#Slope of line
+def Slope(a,b,c,d):
+    return (d - b)/(c - a)
+
 
 def sendImagesToWeb(): 
   thresh = 0.25
   frame_check = 20
+  belt = False
   detect = dlib.get_frontal_face_detector()
   predict = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")# Dat file is the crux of the code
 
@@ -56,7 +61,7 @@ def sendImagesToWeb():
   CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
   "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
   "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
-  "sofa", "train", "tvmonitor"]
+  "sofa", "train", "tvmonitor","mobile","iPhone"]
 
   # load our serialized model from disk
   print("[INFO] loading model...")
@@ -135,19 +140,50 @@ def sendImagesToWeb():
           rightEyeHull = cv2.convexHull(rightEye)
           cv2.drawContours(frame2, [leftEyeHull], -1, (0, 255, 0), 1)
           cv2.drawContours(frame2, [rightEyeHull], -1, (0, 255, 0), 1)
+          blur = cv2.blur(frame2, (1, 1))
+          # Converting Image To Edges
+          edges = cv2.Canny(blur, 50, 400)
+          # Previous Line Slope
+          ps = 0
+
+          # Previous Line Co-ordinates
+          px1, py1, px2, py2 = 0, 0, 0, 0
+          # Extracting Lines
+          lines = cv2.HoughLinesP(edges, 1, np.pi/270, 30, maxLineGap = 20, minLineLength = 170)
           # extract the confidence (i.e., probability) associated with
           # the prediction
+          if lines is not None:
+              for line in lines:
+                  x1, y1, x2, y2 = line[0]# Co-ordinates Of Current Line
+                  s = Slope(x1,y1,x2,y2)# Slope Of Current Line
+                  # If Current Line's Slope Is Greater Than 0.7 And Less Than 2
+                  if ((abs(s) > 0.7) and (abs (s) < 2)):
+                      # And Previous Line's Slope Is Within 0.7 To 2
+                      if((abs(ps) > 0.7) and (abs(ps) < 2)):
+                          # And Both The Lines Are Not Too Far From Each Other
+                          if(((abs(x1 - px1) > 5) and (abs(x2 - px2) > 5)) or ((abs(y1 - py1) > 5) and (abs(y2 - py2) > 5))):
+                              # Plot The Lines On "beltframe"
+                              cv2.line(frame2, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                              cv2.line(frame2, (px1, py1), (px2, py2), (0, 0, 255), 3)
+                              print ("Belt Detected")
+                              belt = True
+                    # Otherwise Current Slope Becomes Previous Slope (ps) And Current Line Becomes Previous Line (px1, py1, px2, py2) 
+                  ps = s  
+                  px1, py1, px2, py2 = line[0]
+          if belt == False:
+            print("No Seatbelt detected")  
+            cv2.putText(frame2,"No Seatbelt detected", (00, 185),
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)    
           if ear < thresh:
               flag += 1
               print(flag)
               if flag >= frame_check:
-                  cv2.putText(frame2, "****************ALERT!****************", (10, 25),
-                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                  cv2.putText(frame2, "****************ALERT!****************", (10,325),
-                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                  cv2.putText(frame2, "Sleepy_Alert-Driver_is_Drowsy", (10, 25),
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                   print ("Drowsy")
           else:
               flag = 0
+        
 
 
       (h, w) = frame1.shape[:2]

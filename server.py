@@ -11,9 +11,7 @@ from imutils import face_utils
 import imagezmq
 import argparse
 import imutils
-from PIL import Image
 import cv2
-import pandas as pd
 from werkzeug.wrappers import Request, Response
 from werkzeug.serving import run_simple
 def eye_aspect_ratio(eye):
@@ -22,7 +20,9 @@ def eye_aspect_ratio(eye):
     C = distance.euclidean(eye[0], eye[3])
     ear = (A + B) / (2.0 * C)
     return ear
-
+#Slope of line
+def Slope(a,b,c,d):
+    return (d - b)/(c - a)
 
 # construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
@@ -42,6 +42,7 @@ args = vars(ap.parse_args())
 def sendImagesToWeb():
     thresh = 0.25
     frame_check = 20
+    belt = False
     detect = dlib.get_frontal_face_detector()
     predict = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")# Dat file is the crux of the code
 
@@ -127,6 +128,17 @@ def sendImagesToWeb():
             rightEyeHull = cv2.convexHull(rightEye)
             cv2.drawContours(frame2, [leftEyeHull], -1, (0, 255, 0), 1)
             cv2.drawContours(frame2, [rightEyeHull], -1, (0, 255, 0), 1)
+            blur = cv2.blur(frame2, (1, 1))
+            # Converting Image To Edges
+            edges = cv2.Canny(blur, 50, 400)
+            # Previous Line Slope
+            ps = 0
+
+            # Previous Line Co-ordinates
+            px1, py1, px2, py2 = 0, 0, 0, 0
+            # Extracting Lines
+            lines = cv2.HoughLinesP(edges, 1, np.pi/270, 30, maxLineGap = 20, minLineLength = 170)
+
             # extract the confidence (i.e., probability) associated with
             # the prediction
             if ear < thresh:
@@ -140,7 +152,27 @@ def sendImagesToWeb():
                     print ("Drowsy")
             else:
                 flag = 0
-
+            # If "lines" Is Not Empty
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]# Co-ordinates Of Current Line
+                    s = Slope(x1,y1,x2,y2)# Slope Of Current Line
+                    # If Current Line's Slope Is Greater Than 0.7 And Less Than 2
+                    if ((abs(s) > 0.7) and (abs (s) < 2)):
+                        # And Previous Line's Slope Is Within 0.7 To 2
+                        if((abs(ps) > 0.7) and (abs(ps) < 2)):
+                            # And Both The Lines Are Not Too Far From Each Other
+                            if(((abs(x1 - px1) > 5) and (abs(x2 - px2) > 5)) or ((abs(y1 - py1) > 5) and (abs(y2 - py2) > 5))):
+                                # Plot The Lines On "beltframe"
+                                cv2.line(frame2, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                                cv2.line(frame2, (px1, py1), (px2, py2), (0, 0, 255), 3)
+                                print ("Belt Detected")
+                                belt = True
+                    # Otherwise Current Slope Becomes Previous Slope (ps) And Current Line Becomes Previous Line (px1, py1, px2, py2)            
+                    ps = s
+                    px1, py1, px2, py2 = line[0]
+            if belt == False:
+                print("No Seatbelt detected")
         
         (h, w) = frame1.shape[:2]
         blob = cv2.dnn.blobFromImage(cv2.resize(frame1, (300, 300)),
